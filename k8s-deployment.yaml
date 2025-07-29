@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: myapp-deployment
+  labels:
+    app: myapp
 spec:
   replicas: 1
   selector:
@@ -13,12 +15,13 @@ spec:
         app: myapp
     spec:
       containers:
-      - name: myapp
-        image: misaqaziz/myapp:latest
-        ports:
-        - containerPort: 3000
+        - name: myapp
+          image: misaqaziz/myapp:latest
+          ports:
+            - containerPort: 3000
 
 ---
+
 apiVersion: v1
 kind: Service
 metadata:
