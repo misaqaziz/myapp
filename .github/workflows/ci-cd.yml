@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
 
     steps:
     - name: Checkout code
@@ -28,19 +28,20 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: ${{ secrets.DOCKERHUB_USERNAME }}/project-bolt:latest
+        tags: misaqaziz/project-bolt:latest
 
     - name: Set up kubeconfig
       run: |
         mkdir -p $HOME/.kube
         echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > $HOME/.kube/config
+        chmod 600 $HOME/.kube/config
 
     - name: Deploy to Kubernetes
       run: |
-        kubectl apply -f k8s/deployment.yaml
-        kubectl apply -f k8s/service.yaml
+        kubectl apply -f k8s/deployment.yaml --validate=false
+        kubectl apply -f k8s/service.yaml --validate=false
 
     - name: Trigger AWS Lambda (optional)
+      if: ${{ secrets.LAMBDA_TRIGGER_URL != '' }}
       run: |
-        curl -X POST "https://<your-api-gateway-or-lambda-url>" || echo "Lambda trigger skipped"
-
+        curl -X POST "${{ secrets.LAMBDA_TRIGGER_URL }}" || echo "Lambda trigger skipped"
