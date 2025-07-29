@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: myapp
-        image: your-dockerhub-username/myapp:latest
+        image: misaqaziz/myapp:latest
         ports:
         - containerPort: 3000
 
