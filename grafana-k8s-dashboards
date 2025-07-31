@@ -1,0 +1,8 @@
+# Download Kubernetes Cluster Monitoring Dashboard
+wget https://grafana.com/api/dashboards/315/revisions/2/download -O dashboards/k8s_cluster.json
+
+# Download Node Exporter Full Dashboard
+wget https://grafana.com/api/dashboards/1860/revisions/22/download -O dashboards/node_exporter.json
+
+# Optionally download Kubelet Metrics dashboard
+wget https://grafana.com/api/dashboards/3131/revisions/1/download -O dashboards/kubelet_metrics.json
