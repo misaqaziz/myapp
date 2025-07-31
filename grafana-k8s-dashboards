@@ -6,3 +6,18 @@ wget https://grafana.com/api/dashboards/1860/revisions/22/download -O dashboards
 
 # Optionally download Kubelet Metrics dashboard
 wget https://grafana.com/api/dashboards/3131/revisions/1/download -O dashboards/kubelet_metrics.json
+
+# Download Kubernetes API Server dashboard
+wget https://grafana.com/api/dashboards/1471/revisions/1/download -O dashboards/k8s_api_server.json
+
+# Download Kubernetes Capacity Planning dashboard
+wget https://grafana.com/api/dashboards/13332/revisions/1/download -O dashboards/k8s_capacity_planning.json
+
+# Download Kubernetes Pod Monitoring dashboard
+wget https://grafana.com/api/dashboards/8563/revisions/1/download -O dashboards/k8s_pod_monitoring.json
+
+# Download Kubernetes Persistent Volumes Monitoring dashboard
+wget https://grafana.com/api/dashboards/11889/revisions/1/download -O dashboards/k8s_pv_monitoring.json
+
+# Download Kubernetes Networking Overview dashboard
+wget https://grafana.com/api/dashboards/12248/revisions/1/download -O dashboards/k8s_networking.json
