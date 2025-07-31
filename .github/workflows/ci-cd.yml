@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -43,7 +44,21 @@ jobs:
         curl -X POST "$LAMBDA_FUNCTION_URL" \
         -H "Content-Type: application/json" \
         -d '{
-          "message": "✅ Docker image pushed to DockerHub: '${{ env.IMAGE_NAME }}:latest'"
+          "message": "✅ Docker image pushed to DockerHub: '${{ env.IMAGE_NAME }}:latest' and deployed to Kubernetes"
         }'
       env:
         LAMBDA_FUNCTION_URL: ${{ secrets.LAMBDA_FUNCTION_URL }}
+
+    - name: Create dashboards folder
+      run: mkdir -p dashboards
+
+    - name: Download Grafana dashboards
+      run: bash download-dashboards.sh
+
+    - name: Commit downloaded dashboards to repo
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add dashboards/
+        git commit -m "⬇️ Auto-update Grafana dashboards"
+        git push || echo "Nothing to commit"
