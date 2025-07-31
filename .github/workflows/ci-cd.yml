@@ -9,6 +9,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/project-bolt
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -28,14 +31,19 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: ${{ secrets.DOCKERHUB_USERNAME }}/project-bolt:latest
+        tags: ${{ env.IMAGE_NAME }}:latest
 
     - name: Set up kubeconfig
       run: |
         mkdir -p $HOME/.kube
         echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > $HOME/.kube/config
 
-
-    - name: Trigger AWS Lambda (optional)
+    - name: Notify via AWS Lambda
       run: |
-        curl -X POST "https://<your-api-gateway-or-lambda-url>" || echo "Lambda trigger skipped"
+        curl -X POST "$LAMBDA_FUNCTION_URL" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "message": "✅ Docker image pushed to DockerHub: '${{ env.IMAGE_NAME }}:latest'"
+        }'
+      env:
+        LAMBDA_FUNCTION_URL: ${{ secrets.LAMBDA_FUNCTION_URL }}
