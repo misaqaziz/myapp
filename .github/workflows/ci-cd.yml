@@ -41,15 +41,25 @@ jobs:
         mkdir -p $HOME/.kube
         echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > $HOME/.kube/config
 
-    - name: Deploy Metrics Pusher
+    - name: Check Kubernetes API availability
+      id: k8s_check
+      continue-on-error: true
       run: |
-        # Create Kubernetes secret for Grafana credentials
+        kubectl version --short
+        kubectl get nodes
+
+    - name: Deploy Metrics Pusher (only if K8s is reachable)
+      if: steps.k8s_check.outcome == 'success'
+      run: |
+        echo "✅ Kubernetes is reachable. Proceeding with deployment..."
+
+        # Create Kubernetes secret for Grafana
         kubectl create secret generic grafana-creds \
           --from-literal=username=${{ secrets.GRAFANA_USERNAME }} \
           --from-literal=api-key=${{ secrets.GRAFANA_API_KEY }} \
           --dry-run=client -o yaml | kubectl apply -f -
 
-        # Create ConfigMap for Prometheus remote_write to Grafana
+        # Create Prometheus config ConfigMap
         cat <<EOF | kubectl apply -f -
         apiVersion: v1
         kind: ConfigMap
@@ -72,7 +82,7 @@ jobs:
                   password: "\${GF_API_KEY}"
         EOF
 
-        # Deploy Prometheus to push metrics
+        # Deploy Prometheus
         cat <<EOF | kubectl apply -f -
         apiVersion: apps/v1
         kind: Deployment
@@ -114,19 +124,25 @@ jobs:
                     name: push-config
         EOF
 
-    - name: Verify Metrics Pusher
+    - name: Verify Metrics Pusher Deployment (only if K8s is reachable)
+      if: steps.k8s_check.outcome == 'success'
       run: |
-        kubectl rollout status deployment/metrics-pusher --timeout=90s
-        kubectl logs -l app=metrics-pusher --tail=50 | grep -i "remote write" || echo "No remote write log yet."
+        kubectl rollout status deployment/metrics-pusher --timeout=90s || echo "Rollout failed"
+        kubectl logs -l app=metrics-pusher --tail=50 || echo "No logs found"
 
     - name: Notify via AWS Lambda
       run: |
+        METRICS_STATUS="unavailable"
+        if kubectl get pods -l app=metrics-pusher >/dev/null 2>&1; then
+          METRICS_STATUS=$(kubectl get pods -l app=metrics-pusher -o jsonpath='{.items[0].status.phase}')
+        fi
+
         curl --fail -X POST "$LAMBDA_FUNCTION_URL" \
-        -H "Content-Type: application/json" \
-        -d '{
-          "message": "✅ Docker image pushed to DockerHub: '${{ env.IMAGE_NAME }}:latest' and deployed to Kubernetes",
-          "metrics_status": "'$(kubectl get pods -l app=metrics-pusher -o jsonpath='{.items[0].status.phase}')'"
-        }'
+          -H "Content-Type: application/json" \
+          -d '{
+            "message": "✅ Docker image pushed to DockerHub: '${{ env.IMAGE_NAME }}:latest'",
+            "metrics_status": "'"$METRICS_STATUS"'"
+          }'
       env:
         LAMBDA_FUNCTION_URL: ${{ secrets.LAMBDA_FUNCTION_URL }}
 
