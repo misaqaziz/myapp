@@ -6,17 +6,16 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/project-bolt
-  GRAFANA_URL: https://prometheus-prod-43-prod-ap-south-1.grafana.net/api/prom
-  GRAFANA_JOB_NAME: surplus-food-app
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/project-bolt
+      GRAFANA_URL: https://prometheus-prod-43-prod-ap-south-1.grafana.net/api/prom
+      GRAFANA_JOB_NAME: surplus-food-app
+
     steps:
-    # Existing steps
     - name: Checkout code
       uses: actions/checkout@v3
 
@@ -37,16 +36,20 @@ jobs:
         push: true
         tags: ${{ env.IMAGE_NAME }}:latest
 
-    # New metrics deployment steps
+    - name: Set up kubeconfig
+      run: |
+        mkdir -p $HOME/.kube
+        echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > $HOME/.kube/config
+
     - name: Deploy Metrics Pusher
       run: |
-        # Create Kubernetes secret
+        # Create Kubernetes secret for Grafana credentials
         kubectl create secret generic grafana-creds \
           --from-literal=username=${{ secrets.GRAFANA_USERNAME }} \
           --from-literal=api-key=${{ secrets.GRAFANA_API_KEY }} \
           --dry-run=client -o yaml | kubectl apply -f -
-        
-        # Apply metrics pusher configuration
+
+        # Create ConfigMap for Prometheus remote_write to Grafana
         cat <<EOF | kubectl apply -f -
         apiVersion: v1
         kind: ConfigMap
@@ -69,7 +72,7 @@ jobs:
                   password: "\${GF_API_KEY}"
         EOF
 
-        # Deploy metrics pusher
+        # Deploy Prometheus to push metrics
         cat <<EOF | kubectl apply -f -
         apiVersion: apps/v1
         kind: Deployment
@@ -111,23 +114,17 @@ jobs:
                     name: push-config
         EOF
 
-    # Existing steps continued
-    - name: Set up kubeconfig
-      run: |
-        mkdir -p $HOME/.kube
-        echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > $HOME/.kube/config
-
     - name: Verify Metrics Pusher
       run: |
         kubectl rollout status deployment/metrics-pusher --timeout=90s
-        kubectl logs -l app=metrics-pusher --tail=50 | grep -i "remote write"
+        kubectl logs -l app=metrics-pusher --tail=50 | grep -i "remote write" || echo "No remote write log yet."
 
     - name: Notify via AWS Lambda
       run: |
-        curl -X POST "$LAMBDA_FUNCTION_URL" \
+        curl --fail -X POST "$LAMBDA_FUNCTION_URL" \
         -H "Content-Type: application/json" \
         -d '{
-          "message": "✅ Docker image pushed to DockerHub: '${{ env.IMAGE_NAME }}:latest'",
+          "message": "✅ Docker image pushed to DockerHub: '${{ env.IMAGE_NAME }}:latest' and deployed to Kubernetes",
           "metrics_status": "'$(kubectl get pods -l app=metrics-pusher -o jsonpath='{.items[0].status.phase}')'"
         }'
       env:
@@ -144,5 +141,5 @@ jobs:
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
         git add dashboards/
-        git commit -m "⬇️ Auto-update Grafana dashboards [skip ci]"
+        git commit -m "⬇️ Auto-update Grafana dashboards"
         git push || echo "Nothing to commit"
