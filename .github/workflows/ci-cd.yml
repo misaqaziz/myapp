@@ -6,14 +6,17 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/project-bolt
+  GRAFANA_URL: https://prometheus-prod-43-prod-ap-south-1.grafana.net/api/prom
+  GRAFANA_JOB_NAME: surplus-food-app
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/project-bolt
-
     steps:
+    # Existing steps
     - name: Checkout code
       uses: actions/checkout@v3
 
@@ -34,17 +37,98 @@ jobs:
         push: true
         tags: ${{ env.IMAGE_NAME }}:latest
 
+    # New metrics deployment steps
+    - name: Deploy Metrics Pusher
+      run: |
+        # Create Kubernetes secret
+        kubectl create secret generic grafana-creds \
+          --from-literal=username=${{ secrets.GRAFANA_USERNAME }} \
+          --from-literal=api-key=${{ secrets.GRAFANA_API_KEY }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+        
+        # Apply metrics pusher configuration
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: push-config
+        data:
+          prometheus.yml: |
+            global:
+              scrape_interval: 15s
+              scrape_timeout: 10s
+            scrape_configs:
+              - job_name: '${{ env.GRAFANA_JOB_NAME }}'
+                metrics_path: '/metrics'
+                static_configs:
+                  - targets: ['backend-service.default.svc.cluster.local:5000']
+            remote_write:
+              - url: '${{ env.GRAFANA_URL }}'
+                basic_auth:
+                  username: "\${GF_USERNAME}"
+                  password: "\${GF_API_KEY}"
+        EOF
+
+        # Deploy metrics pusher
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: metrics-pusher
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: metrics-pusher
+          template:
+            metadata:
+              labels:
+                app: metrics-pusher
+            spec:
+              containers:
+              - name: prometheus
+                image: prom/prometheus:v2.47.0
+                args:
+                  - "--config.file=/etc/prometheus/prometheus.yml"
+                  - "--web.enable-remote-write-receiver"
+                env:
+                  - name: GF_USERNAME
+                    valueFrom:
+                      secretKeyRef:
+                        name: grafana-creds
+                        key: username
+                  - name: GF_API_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        name: grafana-creds
+                        key: api-key
+                volumeMounts:
+                  - name: config
+                    mountPath: /etc/prometheus
+              volumes:
+                - name: config
+                  configMap:
+                    name: push-config
+        EOF
+
+    # Existing steps continued
     - name: Set up kubeconfig
       run: |
         mkdir -p $HOME/.kube
         echo "${{ secrets.KUBE_CONFIG }}" | base64 --decode > $HOME/.kube/config
+
+    - name: Verify Metrics Pusher
+      run: |
+        kubectl rollout status deployment/metrics-pusher --timeout=90s
+        kubectl logs -l app=metrics-pusher --tail=50 | grep -i "remote write"
 
     - name: Notify via AWS Lambda
       run: |
         curl -X POST "$LAMBDA_FUNCTION_URL" \
         -H "Content-Type: application/json" \
         -d '{
-          "message": "✅ Docker image pushed to DockerHub: '${{ env.IMAGE_NAME }}:latest' and deployed to Kubernetes"
+          "message": "✅ Docker image pushed to DockerHub: '${{ env.IMAGE_NAME }}:latest'",
+          "metrics_status": "'$(kubectl get pods -l app=metrics-pusher -o jsonpath='{.items[0].status.phase}')'"
         }'
       env:
         LAMBDA_FUNCTION_URL: ${{ secrets.LAMBDA_FUNCTION_URL }}
@@ -60,5 +144,5 @@ jobs:
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
         git add dashboards/
-        git commit -m "⬇️ Auto-update Grafana dashboards"
+        git commit -m "⬇️ Auto-update Grafana dashboards [skip ci]"
         git push || echo "Nothing to commit"
