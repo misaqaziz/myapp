@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-pusher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metrics-pusher
+  template:
+    metadata:
+      labels:
+        app: metrics-pusher
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.47.0
+        args:
+          - "--config.file=/etc/prometheus/prometheus.yml"
+          - "--web.enable-remote-write-receiver"
+        env:
+          - name: GF_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: grafana-creds
+                key: username
+          - name: GF_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: grafana-creds
+                key: api-key
+        volumeMounts:
+          - name: config
+            mountPath: /etc/prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: push-config
