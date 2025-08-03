@@ -74,7 +74,7 @@ jobs:
               - job_name: '${{ env.GRAFANA_JOB_NAME }}'
                 metrics_path: '/metrics'
                 static_configs:
-                  - targets: ['backend-service.default.svc.cluster.local:5000']
+                  - targets: ['project-bolt-service.default.svc.cluster.local:80']
             remote_write:
               - url: '${{ env.GRAFANA_URL }}'
                 basic_auth:
